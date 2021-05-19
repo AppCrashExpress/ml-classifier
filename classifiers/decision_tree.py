@@ -1,6 +1,7 @@
 import numpy as np
 from collections import namedtuple
 from sklearn.preprocessing import LabelEncoder
+from pandas.api.types import is_numeric_dtype
 
 class CART:
     def __init__(self, max_depth=1000):
@@ -74,8 +75,13 @@ class CART:
     def _partite(self, feats, labels, pointer):
         column = pointer.col
         value  = pointer.val
-        false_indecies = feats.loc[ feats[column] != value ].index
-        true_indecies  = feats.loc[ feats[column] == value ].index
+
+        if is_numeric_dtype(feats[pointer.col]):
+            false_indecies = feats.loc[ feats[column] <  value ].index
+            true_indecies  = feats.loc[ feats[column] >= value ].index
+        else:
+            false_indecies = feats.loc[ feats[column] != value ].index
+            true_indecies  = feats.loc[ feats[column] == value ].index
 
         false_labels = labels.loc[false_indecies]
         true_labels  = labels.loc[true_indecies]
@@ -98,8 +104,13 @@ class CART:
     def _match(self, feats, node):
         if isinstance(node, self._Leaf):
             return node.prediction
+        
+        if is_numeric_dtype(feats[node.pointer.col]):
+            to_true = feats[node.pointer.col] >= node.pointer.val
+        else:
+            to_true = feats[node.pointer.col] == node.pointer.val
 
-        if feats[node.pointer.col] == node.pointer.val:
+        if to_true:
             return self._match(feats, node.true_node)
         else: 
             return self._match(feats, node.false_node)
