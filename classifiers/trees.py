@@ -119,3 +119,30 @@ class CART:
 
     def _most_common_class(self, labels):
         return np.bincount(labels).argmax()
+
+class RandomForest:
+    def __init__(self, n_trees):
+        self._trees = [CART() for _ in range(n_trees)]
+
+    def train(self, feats, labels):
+        sample_size = len(feats)
+
+        for tree in self._trees:
+            sorted_idxs = range(sample_size)
+            sample_idxs = np.random.choice(sorted_idxs, sample_size, replace=True)
+            feats_sample = feats[sample_idxs, :]
+            labels_sample = labels[sample_idxs]
+            tree.train(feats_sample, labels_sample)
+
+    def predict(self, feats):
+        def find_most_common(row):
+            return np.bincount(row).argmax()
+
+        predicts = []
+        for tree in self._trees:
+            predicts.append(tree.predict(feats))
+
+        votes_per_sample = np.array(predicts).T
+        votes = np.apply_along_axis(find_most_common, 1, votes_per_sample)
+
+        return votes.flatten()
