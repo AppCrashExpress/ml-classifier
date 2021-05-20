@@ -1,15 +1,26 @@
 import numpy as np
-from collections import namedtuple
 from sklearn.preprocessing import LabelEncoder
-from pandas.api.types import is_numeric_dtype
 
 class CART:
+    class _DataPointer:
+        def __init__(self, column, value):
+            self.column = column
+            self.value  = value
+
+    class _Node:
+        def __init__(self, false_node, true_node, pointer):
+            self.false_node = false_node
+            self.true_node  = true_node
+            self.pointer    = pointer
+
+    class _Leaf:
+        def __init__(self, prediction):
+            self.prediction = prediction
+
+
     def __init__(self, max_depth=1000):
         self._max_depth = max_depth
         self._root_node = None
-        self._DataPointer = namedtuple("DataPointer", ["col", "val"])
-        self._Node = namedtuple("Node", ["false_node", "true_node", "pointer"])
-        self._Leaf = namedtuple("Leaf", ["prediction"])
 
     def train(self, feats, labels):
         self._root_node = self._build_tree(feats, labels)
@@ -20,17 +31,16 @@ class CART:
 
         predicts = []
 
-        for _, feat_list in feats.iterrows():
+        for feat_list in feats:
             predicts.append(self._match(feat_list, self._root_node))
 
         return predicts
-
 
     def _build_tree(self, feats, labels):
         info_gain, pointer = self._find_best_split(feats, labels)
 
         if info_gain == 0:
-            return self._Leaf(labels.value_counts().idxmax())
+            return self._Leaf(self._most_common_class(labels))
 
         false_feats, false_labels, true_feats, true_labels = self._partite(feats, labels, pointer)
 
@@ -41,16 +51,15 @@ class CART:
 
     def _find_best_split(self, feats, labels):
         max_info_gain = 0
-        pointer = self._DataPointer(None, None)
-
+        pointer = None
+        
         current_impurity = self._gini(labels)
 
-        for col in feats:
-            unique_vals = feats[col].unique()
-            for u_val in unique_vals:
+        for col_i, col in enumerate(feats.T):
+            unique_vals = np.unique(col)
 
-                split_point = self._DataPointer(col, u_val)
-
+            for u_val in unique_vals :
+                split_point = self._DataPointer(col_i, u_val)
                 _, false_labels, _, true_labels = self._partite(feats, labels, split_point)
 
                 if len(false_labels) == 0 or len(true_labels) == 0:
@@ -59,37 +68,36 @@ class CART:
                 info_gain = self._info_gain(false_labels, true_labels, current_impurity)
 
                 if info_gain > max_info_gain:
-                    max_info_gain = info_gain 
-                    pointer = self._DataPointer(col, u_val)
+                    max_info_gain = info_gain
+                    pointer = split_point
 
         return max_info_gain, pointer
 
-    def _gini(self, classes):
-        probs = self._count_probabilities(classes)
-        return 1 - np.sum(probs ** 2)
+    def _partite(self, feats, labels, split_point):
+        column = split_point.column
+        value  = split_point.value
 
-    def _count_probabilities(self, classes):
-        encoded_classes = LabelEncoder().fit_transform(classes)
-        return np.bincount(encoded_classes) / encoded_classes.size
+        false_indecies = feats[:, column] <  value
+        true_indecies  = feats[:, column] >= value
 
-    def _partite(self, feats, labels, pointer):
-        column = pointer.col
-        value  = pointer.val
+        false_feats = feats[false_indecies, :]
+        true_feats  = feats[true_indecies, :]
 
-        if is_numeric_dtype(feats[pointer.col]):
-            false_indecies = feats.loc[ feats[column] <  value ].index
-            true_indecies  = feats.loc[ feats[column] >= value ].index
-        else:
-            false_indecies = feats.loc[ feats[column] != value ].index
-            true_indecies  = feats.loc[ feats[column] == value ].index
-
-        false_labels = labels.loc[false_indecies]
-        true_labels  = labels.loc[true_indecies]
-
-        false_feats = feats.loc[false_indecies]
-        true_feats  = feats.loc[true_indecies]
+        false_labels = labels[false_indecies]
+        true_labels  = labels[true_indecies]
 
         return false_feats, false_labels, true_feats, true_labels
+        
+    def _match(self, feats, node):
+        if isinstance(node, self._Leaf):
+            return node.prediction
+
+        to_true = feats[node.pointer.column] >= node.pointer.value
+
+        if to_true:
+            return self._match(feats, node.true_node)
+        else:
+            return self._match(feats, node.false_node)
 
     def _info_gain(self, false_labels, true_labels, parent_impurity):
         false_c = len(false_labels)
@@ -101,16 +109,13 @@ class CART:
 
         return parent_impurity - false_gini - true_gini
 
-    def _match(self, feats, node):
-        if isinstance(node, self._Leaf):
-            return node.prediction
-        
-        if is_numeric_dtype(feats[node.pointer.col]):
-            to_true = feats[node.pointer.col] >= node.pointer.val
-        else:
-            to_true = feats[node.pointer.col] == node.pointer.val
+    def _gini(self, classes):
+        probs = self._count_classes(classes) / len(classes)
 
-        if to_true:
-            return self._match(feats, node.true_node)
-        else: 
-            return self._match(feats, node.false_node)
+        return 1 - np.sum(probs ** 2)
+
+    def _count_classes(self, classes):
+        return np.bincount(classes)
+
+    def _most_common_class(self, labels):
+        return np.bincount(labels).argmax()
