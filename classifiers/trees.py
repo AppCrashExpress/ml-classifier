@@ -18,8 +18,7 @@ class CART:
             self.prediction = prediction
 
 
-    def __init__(self, max_depth=1000):
-        self._max_depth = max_depth
+    def __init__(self):
         self._root_node = None
 
     def train(self, feats, labels):
